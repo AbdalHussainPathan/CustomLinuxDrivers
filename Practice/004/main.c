@@ -5,7 +5,10 @@
 #include<linux/kdev_t.h>
 #include<linux/uaccess.h>
 #include <linux/version.h>
-
+#undef pr_fmt
+#define pr_fmt(fmt) "%s: "fmt,__func__ //check printk.h
+#define MAX_SIZE 1024
+char device_buff[MAX_SIZE];
 dev_t ex_devnum;
 static struct class *ex_class;
 static struct device *ex_dev;
@@ -31,17 +34,37 @@ static int ex_release (struct inode *inode, struct file *filp)
 static int ex_open(struct inode *inode, struct file *filp)
 {
   pr_info("Open is called\n");
+
   return 0;
 }
 static ssize_t ex_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos)
 {
   pr_info("write is called\n");
+  pr_info("Current file pos is: %lld\n",*f_pos);
+  pr_info("Requested bytes to write: %zu\n",count);
+  if(*f_pos+count>MAX_SIZE)
+      count=MAX_SIZE-*f_pos;
+  if(!count) return -ENOMEM;
+  if(copy_from_user(&device_buff[*f_pos],buff,count))
+    return -EFAULT;
+  *f_pos+=count;
+  pr_info("Succesfully write bytes : %zu\n",count);
+  pr_info("Updated file pos is: %lld\n",*f_pos);
   return count;
 }
 static ssize_t ex_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos)
 {
   pr_info("read is called\n");
-  return 0;
+  pr_info("Current file pos is: %lld\n",*f_pos);
+  pr_info("Requested bytes to read: %zu\n",count);
+  if(*f_pos+count>MAX_SIZE)
+      count=MAX_SIZE-*f_pos;
+  if(copy_to_user(buff,&device_buff[*f_pos],count))
+    return -EFAULT;
+  *f_pos+=count;
+  pr_info("Succesfully read bytes : %zu\n",count);
+  pr_info("Updated file pos is: %lld\n",*f_pos);
+  return count;
 }
 
 static int __init hello_init(void)
