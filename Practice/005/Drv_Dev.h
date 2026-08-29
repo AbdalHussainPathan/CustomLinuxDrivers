@@ -11,7 +11,7 @@ struct dev_private_data
   int perm;
   char *buffer;
   const char* Dev_Name;
-  struct cdev cdev;
+  struct cdev ex_cdev;
 };
 struct drv_private_data
 {
@@ -19,54 +19,53 @@ struct drv_private_data
   dev_t ex_devnum;
   struct class *ex_class;
   struct device *ex_dev;
-  struct cdev ex_cdev;
-  struct dev_private_data Devices[MAX_DEV];
+  struct dev_private_data pcdev_data[MAX_DEV];
 };
 struct drv_private_data drv_data=
 {
-  .total_dev=MAX_DEV;
+  .total_dev=MAX_DEV,
   .pcdev_data=
   {
     [0]=
     {
-      .size=MAX_SIZE;
-      .perm=RONLY;
-      .Dev_Name="Device1";
+      .size=MAX_SIZE,
+      .perm=RONLY,
+      .Dev_Name="Device1",
       .buffer=device1_buff
     },
     [1]=
     {
-      .size=MAX_SIZE;
-      .perm=RONLY;
-      .Dev_Name="Device2";
+      .size=MAX_SIZE,
+      .perm=RONLY,
+      .Dev_Name="Device2",
       .buffer=device2_buff
     },
      [2]=
     {
-      .size=MAX_SIZE;
-      .perm=WRONLY;
-      .Dev_Name="Device3";
+      .size=MAX_SIZE,
+      .perm=WRONLY,
+      .Dev_Name="Device3",
       .buffer=device3_buff
     },
      [3]=
     {
-      .size=MAX_SIZE;
-      .perm=WRONLY;
-      .Dev_Name="Device4";
+      .size=MAX_SIZE,
+      .perm=WRONLY,
+      .Dev_Name="Device4",
       .buffer=device4_buff
     },
      [4]=
     {
-      .size=MAX_SIZE;
-      .perm=RDWR;
-      .Dev_Name="Device4";
+      .size=MAX_SIZE,
+      .perm=RDWR,
+      .Dev_Name="Device4",
       .buffer=device4_buff
     },
      [5]=
     {
-      .size=MAX_SIZE;
-      .perm=RDWR;
-      .Dev_Name="Device5";
+      .size=MAX_SIZE,
+      .perm=RDWR,
+      .Dev_Name="Device5",
       .buffer=device5_buff
     }
     }

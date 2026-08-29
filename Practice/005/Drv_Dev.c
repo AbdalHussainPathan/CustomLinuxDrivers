@@ -12,7 +12,7 @@ static int ex_open(struct inode *inode, struct file *filp)
 }
 static ssize_t ex_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos)
 {
-  pr_info("write is called\n");
+  /*pr_info("write is called\n");
   pr_info("Current file pos is: %lld\n",*f_pos);
   pr_info("Requested bytes to write: %zu\n",count);
   if(*f_pos+count>MAX_SIZE)
@@ -22,12 +22,12 @@ static ssize_t ex_write(struct file *filp, const char __user *buff, size_t count
     return -EFAULT;
   *f_pos+=count;
   pr_info("Succesfully write bytes : %zu\n",count);
-  pr_info("Updated file pos is: %lld\n",*f_pos);
+  pr_info("Updated file pos is: %lld\n",*f_pos);*/
   return count;
 }
 static ssize_t ex_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos)
 {
-  pr_info("read is called\n");
+  /*pr_info("read is called\n");
   pr_info("Current file pos is: %lld\n",*f_pos);
   pr_info("Requested bytes to read: %zu\n",count);
   if(*f_pos+count>MAX_SIZE)
@@ -36,18 +36,19 @@ static ssize_t ex_read(struct file *filp, char __user *buff, size_t count, loff_
     return -EFAULT;
   *f_pos+=count;
   pr_info("Succesfully read bytes : %zu\n",count);
-  pr_info("Updated file pos is: %lld\n",*f_pos);
+  pr_info("Updated file pos is: %lld\n",*f_pos);*/
   return count;
 }
 
 static int __init hello_init(void)
 {
         int ret=0;
+        short i=0;
         alloc_chrdev_region(&drv_data.ex_devnum,0,MAX_DEV,"Pseudo_Device");
         if(ret<0) //static Major:Min allocation(Kernel picks major num  and stroes in dev_num
             {return ret;}
-        pcdrv_data.ex_class=class_create("Pseudo_Device_Class");
-        if(IS_ERR(ex_class))
+        drv_data.ex_class=class_create("Pseudo_Device_Class");
+        if(IS_ERR(drv_data.ex_class))
         {
           pr_err("Cannot create Pseudo_Device_Class\n");
           goto unreg_dev;
@@ -62,8 +63,8 @@ static int __init hello_init(void)
             pr_err("Cannot device to the system\n");
             goto unreg_dev;
           }
-          pcdrv_data.ex_dev=device_create(drv_data.ex_class,NULL,drv_data.ex_devnum+i,NULL,"Pseudo_Device-%d",i+1);
-          if(IS_ERR(pcdrv_data.ex_dev))
+          drv_data.ex_dev=device_create(drv_data.ex_class,NULL,drv_data.ex_devnum+i,NULL,"Pseudo_Device-%d",i+1);
+          if(IS_ERR(drv_data.ex_dev))
           {
              pr_err("Cannot create Device\n");
              goto class_des;
@@ -75,19 +76,25 @@ unreg_dev:
     unregister_chrdev_region(drv_data.ex_devnum,1);
 class_des:
 for(;i>=0;i--)
-    device_destroy(ex_class,ex_devnum);
-    cdev_del(&ex_cdev);
-    class_destroy(pcdrv_data.ex_class);
+    {
+      device_destroy(drv_data.ex_class,drv_data.ex_devnum+i);
+      cdev_del(&drv_data.pcdev_data[i].ex_cdev);
+    }
+    class_destroy(drv_data.ex_class);
     
     
     return -1;
 }
 static void __exit hello_CleanUp(void)
-{
-    device_destroy(ex_class,ex_devnum);
-    cdev_del(&ex_cdev);
-    unregister_chrdev_region(ex_devnum,1);
-    class_destroy(ex_class);
+{ 
+    short i;
+    for(i=0;i<MAX_DEV;i++)
+    {
+      device_destroy(drv_data.ex_class,drv_data.ex_devnum+i);
+      cdev_del(&drv_data.pcdev_data[i].ex_cdev);
+    }
+    unregister_chrdev_region(drv_data.ex_devnum,1);
+    class_destroy(drv_data.ex_class);
     pr_info("Module Removed\n");
 }
 module_init(hello_init);
