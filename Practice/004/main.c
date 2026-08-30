@@ -1,3 +1,4 @@
+//Linux Includes
 #include<linux/module.h>
 #include<linux/fs.h>
 #include<linux/cdev.h>
@@ -5,11 +6,19 @@
 #include<linux/kdev_t.h>
 #include<linux/uaccess.h>
 #include <linux/version.h>
+#include<linux/ioctl.h>
+//Defines
 #undef pr_fmt
 #define pr_fmt(fmt) "%s: "fmt,__func__ //check printk.h
 #define MAX_SIZE 1024
+#define WR_ONLY _IOW('a','a',int32_t)
+#define RD_ONLY _IOR('a','b',int32_t)
+#define RD_WR   _IOWR('a','c',int32_t)
+
+//Delarations
 char device_buff[MAX_SIZE];
 dev_t ex_devnum;
+int value=0;
 static struct class *ex_class;
 static struct device *ex_dev;
 static struct cdev ex_cdev;
@@ -17,15 +26,56 @@ static int ex_open(struct inode *inode, struct file *filp);
 static ssize_t ex_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos);
 static ssize_t ex_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos);
 static int ex_release (struct inode *inode, struct file *filp);
-
+static long ex_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 static struct file_operations ex_fops=
 {
   .open=ex_open,
   .write=ex_write,
   .read=ex_read,
   .release=ex_release,
+  .unlocked_ioctl=ex_ioctl,
   .owner=THIS_MODULE
 };
+//Defination of functions
+static long ex_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+  pr_info("IOCTL is called\n");
+  pr_info("cmd is: %u\n",cmd);
+  pr_info("arg is: %lu\n",arg);
+
+  switch(cmd)
+  {
+    case WR_ONLY:
+      pr_info("IOCTL CMD WR_ONLY is called\n");
+      if(copy_from_user(&value,(int32_t*)arg,sizeof(value)))
+        return -EFAULT;
+      pr_info("Written value is %d\n",value);
+      break;
+    case RD_ONLY:
+      pr_info("IOCTL CMD RD_ONLY is called\n");
+      if(copy_to_user((int32_t*)arg,&value,sizeof(value)))
+        return -EFAULT;
+      pr_info("value is Read %d\n",value);
+      break;
+    case RD_WR:
+      pr_info("IOCTL CMD RD_WR is called\n");
+      // 1. Copy the current kernel value out to the user's buffer first
+      int32_t temp_val = value; 
+      if(copy_to_user((int32_t*)arg, &temp_val, sizeof(temp_val)))
+          return -EFAULT;
+          
+      // 2. Fetch the new value the user wants to write into the kernel variable
+      if(copy_from_user(&value, (int32_t*)arg, sizeof(value)))
+          return -EFAULT;
+          
+      pr_info("RD_WR updated value from %d to %d\n", temp_val, value);
+      break;
+    default:
+      pr_info("Invalid IOCTL command\n");
+      return -EINVAL;
+  }
+  return 0;
+}
 static int ex_release (struct inode *inode, struct file *filp)
 {
    pr_info("close was success\n");
@@ -83,7 +133,7 @@ static int __init hello_init(void)
         if(IS_ERR(ex_class))
         {
           pr_err("Cannot create class\n");
-          goto unreg_dev;
+          goto cdev_del_err;
         }
         ex_dev=device_create(ex_class,NULL,ex_devnum,NULL,"Example_Device");
         if(IS_ERR(ex_dev))
@@ -96,6 +146,8 @@ static int __init hello_init(void)
 	return 0;
 unreg_dev:
     unregister_chrdev_region(ex_devnum,1);
+cdev_del_err:
+    cdev_del(&ex_cdev);
 class_des:
     class_destroy(ex_class);
     return -1;
