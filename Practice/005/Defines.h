@@ -19,4 +19,7 @@ static ssize_t ex_read(struct file *filp, char __user *buff, size_t count, loff_
 static int ex_release (struct inode *inode, struct file *filp);
 
 
+int chk_permission(int dev_perm,int access_mode);
+
+
 

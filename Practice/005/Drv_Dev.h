@@ -30,42 +30,42 @@ struct drv_private_data drv_data=
     {
       .size=MAX_SIZE,
       .perm=RONLY,
-      .Dev_Name="Device1",
+      .Dev_Name="Device-1",
       .buffer=device1_buff
     },
     [1]=
     {
       .size=MAX_SIZE,
       .perm=RONLY,
-      .Dev_Name="Device2",
+      .Dev_Name="Device-2",
       .buffer=device2_buff
     },
      [2]=
     {
       .size=MAX_SIZE,
       .perm=WRONLY,
-      .Dev_Name="Device3",
+      .Dev_Name="Device-3",
       .buffer=device3_buff
     },
      [3]=
     {
       .size=MAX_SIZE,
       .perm=WRONLY,
-      .Dev_Name="Device4",
+      .Dev_Name="Device-4",
       .buffer=device4_buff
     },
      [4]=
     {
       .size=MAX_SIZE,
       .perm=RDWR,
-      .Dev_Name="Device4",
+      .Dev_Name="Device-4",
       .buffer=device4_buff
     },
      [5]=
     {
       .size=MAX_SIZE,
       .perm=RDWR,
-      .Dev_Name="Device5",
+      .Dev_Name="Device-5",
       .buffer=device5_buff
     }
     }

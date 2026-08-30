@@ -7,8 +7,30 @@ static int ex_release (struct inode *inode, struct file *filp)
 static int ex_open(struct inode *inode, struct file *filp)
 {
   pr_info("Open is called\n");
+  short ret =0;
+  int minor_n;
+  struct dev_private_data *device_data;
+  minor_n=MINOR(inode->i_rdev);
 
-  return 0;
+  pr_info("Minor Access=%d\n",minor_n);
+
+  device_data=container_of(inode->i_cdev,struct dev_private_data,ex_cdev);
+
+  filp->private_data=device_data;
+
+  ret=chk_permission(device_data->perm,filp->f_mode);
+  (!ret)?pr_info("open was Success\n"):pr_info("open wasn't Success\n");
+  return ret;
+}
+int chk_permission(int dev_perm,int access_mode)
+{
+  if(dev_perm==RDWR)
+    return 0;
+  if((dev_perm==RONLY)&&((access_mode&FMODE_READ)&&!(access_mode&FMODE_WRITE))) //RONLY access
+    return 0;
+  if((dev_perm==WRONLY)&&((access_mode&FMODE_WRITE)&&!(access_mode&FMODE_READ))) //WONLY access
+    return 0;
+  return -EPERM;
 }
 static ssize_t ex_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos)
 {
@@ -60,10 +82,10 @@ static int __init hello_init(void)
           drv_data.pcdev_data[i].ex_cdev.owner=THIS_MODULE;
           if(cdev_add(&drv_data.pcdev_data[i].ex_cdev,drv_data.ex_devnum+i,1)<0)
           {
-            pr_err("Cannot device to the system\n");
+            pr_err("Cannot add device to the system\n");
             goto unreg_dev;
           }
-          drv_data.ex_dev=device_create(drv_data.ex_class,NULL,drv_data.ex_devnum+i,NULL,"Pseudo_Device-%d",i+1);
+          drv_data.ex_dev=device_create(drv_data.ex_class,NULL,drv_data.ex_devnum+i,NULL,"Device-%d",i+1);
           if(IS_ERR(drv_data.ex_dev))
           {
              pr_err("Cannot create Device\n");
