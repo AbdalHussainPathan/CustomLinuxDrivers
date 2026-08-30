@@ -10,14 +10,17 @@ static int ex_open(struct inode *inode, struct file *filp)
   short ret =0;
   int minor_n;
   struct dev_private_data *device_data;
+  //find out on which device file open was attempted by the user space
   minor_n=MINOR(inode->i_rdev);
-
+//driver distinguishes between devices using minor number
   pr_info("Minor Access=%d\n",minor_n);
-
+ //include/linux/kernel.h ->container_of() gives addr of 
+ //container holding it's memeber element//linux/include/linux/  fs.h -> *i_cdev 
   device_data=container_of(inode->i_cdev,struct dev_private_data,ex_cdev);
-
+//to supply device private data to other methods of the driver
   filp->private_data=device_data;
-
+//check permission
+  //For example if pcdev1 is rdonly hence driver shouldn't open it with rwonly permissions
   ret=chk_permission(device_data->perm,filp->f_mode);
   (!ret)?pr_info("open was Success\n"):pr_info("open wasn't Success\n");
   return ret;
@@ -34,31 +37,38 @@ int chk_permission(int dev_perm,int access_mode)
 }
 static ssize_t ex_write(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos)
 {
-  /*pr_info("write is called\n");
+  pr_info("write is called\n");
   pr_info("Current file pos is: %lld\n",*f_pos);
   pr_info("Requested bytes to write: %zu\n",count);
-  if(*f_pos+count>MAX_SIZE)
-      count=MAX_SIZE-*f_pos;
+
+  struct dev_private_data *device_data=(struct dev_private_data*)filp->private_data;//In open mtd we already saved
+  //device private data(type cast it bcz it returns void)
+  int max_size=device_data->size;
+  if(*f_pos+count>max_size)
+      count=max_size-*f_pos;
   if(!count) return -ENOMEM;
-  if(copy_from_user(&device_buff[*f_pos],buff,count))
+  if(copy_from_user(device_data->buffer+*f_pos,buff,count))
     return -EFAULT;
   *f_pos+=count;
   pr_info("Succesfully write bytes : %zu\n",count);
-  pr_info("Updated file pos is: %lld\n",*f_pos);*/
+  pr_info("Updated file pos is: %lld\n",*f_pos);
   return count;
 }
 static ssize_t ex_read(struct file *filp, char __user *buff, size_t count, loff_t *f_pos)
 {
-  /*pr_info("read is called\n");
+  pr_info("read is called\n");
   pr_info("Current file pos is: %lld\n",*f_pos);
   pr_info("Requested bytes to read: %zu\n",count);
-  if(*f_pos+count>MAX_SIZE)
-      count=MAX_SIZE-*f_pos;
-  if(copy_to_user(buff,&device_buff[*f_pos],count))
+  struct dev_private_data *device_data=(struct dev_private_data*)filp->private_data;//In open mtd we already saved
+  //device private data(type cast it bcz it returns void)
+  int max_size=device_data->size;
+  if(*f_pos+count>max_size)
+      count=max_size-*f_pos;
+  if(copy_to_user(buff,device_data->buffer+*f_pos,count))
     return -EFAULT;
   *f_pos+=count;
   pr_info("Succesfully read bytes : %zu\n",count);
-  pr_info("Updated file pos is: %lld\n",*f_pos);*/
+  pr_info("Updated file pos is: %lld\n",*f_pos);
   return count;
 }
 
