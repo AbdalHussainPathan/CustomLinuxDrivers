@@ -74,12 +74,14 @@ class_des:
     class_destroy(class_dev);
     return -1;
 }
+
 static void __exit exit_function(void)
 {
-     unregister_chrdev_region(dev_num,1);
-    class_destroy(class_dev);
-    device_destroy(class_dev,dev_num);
-    cdev_del(&cdev_dev);
+    cdev_del(&cdev_dev);                          // 1. stop new I/O
+    kthread_stop(wait_thread);                    // 2. tell thread to exit
+    device_destroy(class_dev, dev_num);           // 3.
+    class_destroy(class_dev);                     // 4.
+    unregister_chrdev_region(dev_num, 1); 
     wait_value=2;
     wake_up_interruptible(&wait_queue_ex);
     pr_info("Removed Device Driver\n");
@@ -87,10 +89,13 @@ static void __exit exit_function(void)
 
 static int ThreadFunction(void *unused)
 {
-    while(1)
+    while(!kthread_should_stop())
     {
         pr_info("Waiting for event!\n");
-        wait_event_interruptible(wait_queue_ex,wait_value!=0);
+        wait_event_interruptible(wait_queue_ex,wait_value!=0||kthread_should_stop());
+        if (kthread_should_stop())
+            break;
+
         if(wait_value==2)
         {
             pr_info("Thread Function called from __Exit function\n");
@@ -105,7 +110,6 @@ static int ThreadFunction(void *unused)
         }
         wait_value=0;
     }
-    do_exit(0);
     return 0;
 }
 
