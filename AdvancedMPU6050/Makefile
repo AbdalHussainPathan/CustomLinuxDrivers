@@ -1,4 +1,4 @@
-obj-m += main.o
+obj-m += MPU.o
 
 # Target Directories
 #ARM_KERN_DIR  = /home/abdal/BBB_Workspace/LDD/source/linux-5.10.168-ti-rt-r76
