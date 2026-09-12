@@ -1,4 +1,31 @@
 #include "MPU.h"
+#include <linux/timer.h>
+void Timer_Callback(struct timer_list *data)
+{
+	 /* from_timer gives us back the containing struct */
+	struct Mpu_I2cDev *mpu=timer_container_of(mpu,data,timer);
+	schedule_work(&mpu->work);
+	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(TIMEOUT));
+}
+void Work_Callback(struct work_struct *work)
+{
+	struct Mpu_I2cDev *mpu=container_of(work,struct Mpu_I2cDev,work);
+	struct mpu6050_sample read_sample;
+	u8 Raw_data[MPU6050_BURST_LEN];
+	mutex_lock(&mpu->lock);
+    short ret=mpu_readburst(mpu->client,Raw_data);
+	if (ret < 0) 
+	{
+		mutex_unlock(&mpu->lock);
+		pr_err("mpu6050: burst read failed (%d)\n", ret);
+		return;
+	}
+	Decode_MPU(&read_sample,Raw_data);
+	mpu->DataArr[mpu->write_idx]=read_sample;
+	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(TIMEOUT));
+	mutex_unlock(&mpu->lock);
+
+}
 static int mpu_read_reg(struct i2c_client *client,u8 reg)
 {
 	return i2c_smbus_read_byte_data(client,reg);
@@ -63,27 +90,17 @@ static ssize_t write_mpu(struct file *filp, const char __user *buff, size_t coun
 static ssize_t read_mpu(struct file *filp, char __user *buff, size_t count, loff_t *f_pos)
 {
   struct Mpu_I2cDev *mpu=pI2cMpu_Handle;
-  u8 Raw_data[MPU6050_BURST_LEN];
   struct mpu6050_sample read_sample;
-  int ret=0;
   size_t to_copybytes;
 
   pr_info("read is called\n");
 
   if(!mpu||!mpu->client)
   	{return -ENODEV;}
-  if(*f_pos!=0)
-  	{return 0;}
+
   mutex_lock(&mpu->lock);
-  ret=mpu_readburst(mpu->client,Raw_data);
-  if (ret < 0) 
-  {
-	mutex_unlock(&mpu->lock);
-	pr_err("mpu6050: burst read failed (%d)\n", ret);
-	return ret;
-  }
-  Decode_MPU(&read_sample,Raw_data);
-  
+  read_sample=mpu->DataArr[mpu->Read_idx];
+  mpu->Read_idx = (mpu->Read_idx + 1) % DATA_ARR_SIZE;
   mpu->msg_len=scnprintf(mpu->msg,sizeof(mpu->msg),
   "ax=%d ay=%d az=%d temp_raw=%d gx=%d gy=%d gz=%d\n",
   read_sample.accel_x,read_sample.accel_y,read_sample.accel_z,
@@ -154,8 +171,11 @@ static int mpu_probe(struct i2c_client *client)
 	}
 	pMpu_Dev->client=client;
 	mutex_init(&pMpu_Dev->lock);
+	pMpu_Dev->write_idx=0;
+	pMpu_Dev->Read_idx=0;
 	i2c_set_clientdata(client,pMpu_Dev);
 	pI2cMpu_Handle=pMpu_Dev;
+
 	ret=mpu_wakeup(client);
 	if(ret<0)
 	{
@@ -168,6 +188,11 @@ static int mpu_probe(struct i2c_client *client)
 		dev_err(&client->dev, "failed to init char device (%d)\n", ret);
 		return ret;
 	}
+	//Work item runs in process context
+	INIT_WORK(&pMpu_Dev->work,Work_Callback);
+	 /* setup your timer to call my_timer_callback */
+    timer_setup(&pMpu_Dev->timer, Timer_Callback, 0);
+	mod_timer(&pMpu_Dev->timer,jiffies +msecs_to_jiffies(TIMEOUT));
 	dev_info(&client->dev, "mpu6050 driver probe complete\n");
 	return ret;	
 }
@@ -182,6 +207,7 @@ static void mpu_remove(struct i2c_client *client)
 	}
 	dev_info(&client->dev, "mpu6050 driver removed\n");
 }
+
 /*
  * Matches when a client is created with this name - either via
  * manual sysfs new_device echo ("mpu6050 0x68") or a DT node with

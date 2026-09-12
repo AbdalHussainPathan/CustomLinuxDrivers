@@ -6,6 +6,9 @@
 #include <linux/i2c.h>
 #include <linux/delay.h>
 #include <linux/mutex.h>
+#include <linux/timer.h>
+#include <linux/jiffies.h>
+#include <linux/workqueue.h>
 #include <linux/version.h>
 #define DRIVER_NAME			       "mpu6050"
 #define MPU6050_REG_PWR_MGMT_1      0x6B
@@ -15,6 +18,19 @@
 #define MPU6050_WHOAMI_MPU6050      0x68
 #define MPU6050_WHOAMI_MPU6500      0x70
 #define MPU6050_REG_PWR_MGMT_2		0x6C
+#define DATA_ARR_SIZE 5
+#define TIMEOUT 1000
+//MPU Helpers
+struct mpu6050_sample {
+	s16 accel_x, accel_y, accel_z;
+	s16 temp_raw;
+	s16 gyro_x, gyro_y, gyro_z;
+};
+static int mpu_readburst(struct i2c_client *client, u8 *buf);
+static int mpu_read_reg(struct i2c_client *client,u8 reg);
+static int mpu_wakeup(struct i2c_client *client);
+static int mpu_write_reg(struct i2c_client *client, u8 reg, u8 val);
+static void Decode_MPU(struct mpu6050_sample *sample, uint8_t *data);
 //Device
 struct Mpu_I2cDev
 {
@@ -26,6 +42,14 @@ struct Mpu_I2cDev
 	struct class *class_mpu;
 	struct device *device_mpu;
 	struct i2c_client *client;
+
+
+	struct work_struct work;
+	struct timer_list timer;
+	struct  mpu6050_sample  DataArr[DATA_ARR_SIZE];
+
+	u8 write_idx;// next slot the workqueue will fill
+	u8 Read_idx; //read pos
 };
 struct Mpu_I2cDev *pI2cMpu_Handle;
 
@@ -41,6 +65,9 @@ static int close_mpu(struct inode *inode,struct file *filp);
 static ssize_t write_mpu(struct file *filp,const char __user *buff,size_t count,loff_t *fpos);
 static ssize_t read_mpu(struct file *filp, char __user *buff,size_t count,loff_t *fpos);
 
+static void Timer_Callback(struct timer_list *t);
+static void Work_Callback(struct work_struct *work);
+
 struct file_operations fops=
 {
     .read=read_mpu,
@@ -50,14 +77,4 @@ struct file_operations fops=
     .owner=THIS_MODULE
 };
 
-//MPU Helpers
-struct mpu6050_sample {
-	s16 accel_x, accel_y, accel_z;
-	s16 temp_raw;
-	s16 gyro_x, gyro_y, gyro_z;
-};
-static int mpu_readburst(struct i2c_client *client, u8 *buf);
-static int mpu_read_reg(struct i2c_client *client,u8 reg);
-static int mpu_wakeup(struct i2c_client *client);
-static int mpu_write_reg(struct i2c_client *client, u8 reg, u8 val);
-static void Decode_MPU(struct mpu6050_sample *sample, uint8_t *data);
+
