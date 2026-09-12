@@ -20,6 +20,8 @@
 #define MPU6050_REG_PWR_MGMT_2		0x6C
 #define DATA_ARR_SIZE 5
 #define TIMEOUT 1000
+
+DECLARE_WAIT_QUEUE_HEAD(BufferFull_Queue);
 //MPU Helpers
 struct mpu6050_sample {
 	s16 accel_x, accel_y, accel_z;

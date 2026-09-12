@@ -22,6 +22,10 @@ void Work_Callback(struct work_struct *work)
 	}
 	Decode_MPU(&read_sample,Raw_data);
 	mpu->DataArr[mpu->write_idx]=read_sample;
+	mpu->write_idx = (mpu->write_idx + 1) % DATA_ARR_SIZE;
+	
+	wake_up_interruptible(&BufferFull_Queue);// wake on every new sample
+	
 	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(TIMEOUT));
 	mutex_unlock(&mpu->lock);
 
@@ -93,12 +97,14 @@ static ssize_t read_mpu(struct file *filp, char __user *buff, size_t count, loff
   struct mpu6050_sample read_sample;
   size_t to_copybytes;
 
-  pr_info("read is called\n");
-
+  pr_info("Waiting for Data\n");
+  
   if(!mpu||!mpu->client)
   	{return -ENODEV;}
-
-  mutex_lock(&mpu->lock);
+  if (wait_event_interruptible(BufferFull_Queue, mpu->write_idx != mpu->Read_idx))
+        return -ERESTARTSYS;
+   mutex_lock(&mpu->lock);
+  pr_info("Wait Finished,Now Reading!\n");
   read_sample=mpu->DataArr[mpu->Read_idx];
   mpu->Read_idx = (mpu->Read_idx + 1) % DATA_ARR_SIZE;
   mpu->msg_len=scnprintf(mpu->msg,sizeof(mpu->msg),
@@ -201,6 +207,12 @@ static void mpu_remove(struct i2c_client *client)
 	struct Mpu_I2cDev *mpu=i2c_get_clientdata(client);
 	if(mpu)
 	{
+		/* Stopping the timer first so it can't schedule new work, then
+		 * make sure any already-queued/running work item finishes
+		 * before we tear down the char device under it. */
+		timer_delete_sync(&mpu->timer);
+		cancel_work_sync(&mpu->work);
+
 		I2C_exit(mpu);
 		if(mpu==pI2cMpu_Handle)
 			pI2cMpu_Handle=NULL;
