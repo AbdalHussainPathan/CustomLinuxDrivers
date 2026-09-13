@@ -1,11 +1,14 @@
 #include "MPU.h"
-#include <linux/timer.h>
+struct Mpu_I2cDev *pI2cMpu_Handle;
 void Timer_Callback(struct timer_list *data)
 {
 	 /* from_timer gives us back the containing struct */
 	struct Mpu_I2cDev *mpu=timer_container_of(mpu,data,timer);
 	schedule_work(&mpu->work);
-	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies((nTimeout!=0)?nTimeout:TIMEOUT));
+	/* sample_interval_ms is read without the lock here - a stale/torn
+	 * read of a u32 being written elsewhere is a low-risk, accepted
+	 * simplification at this stage (same tradeoff as the .poll check). */
+	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(mpu->sample_interval_ms));
 }
 void Work_Callback(struct work_struct *work)
 {
@@ -26,19 +29,35 @@ void Work_Callback(struct work_struct *work)
 	
 	wake_up_interruptible(&BufferFull_Queue);// wake on every new sample
 	
-	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(TIMEOUT));
+	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(mpu->sample_interval_ms));
 	mutex_unlock(&mpu->lock);
 }
 
 static int close_mpu (struct inode *inode, struct file *filp)
 {
-   pr_info("close was success\n");
+	kfree(filp->private_data);
+	filp->private_data=NULL;
+   	pr_info("close was success\n");
   return 0;
 }
 static int open_mpu(struct inode *inode, struct file *filp)
 {
+  
+  struct Mpu_FileState *fState;
+  fState=kzalloc(sizeof(fState),GFP_KERNEL);
+  if(!fState) 
+  {
+	return -ENOMEM;
+  }
+  //This sets a new reader's starting position to wherever 
+  //the producer currently is, instead of starting at 0.
+    //filp->f_pos=0;
+  if(pI2cMpu_Handle)
+  {
+	fState->read_idx=pI2cMpu_Handle->write_idx;
+  }
+  filp->private_data=fState;
   pr_info("mpu6050 : Open\n");
-  filp->f_pos=0;
   return 0;
 }
 static ssize_t write_mpu(struct file *filp, const char __user *buff, size_t count, loff_t *f_pos)
@@ -53,11 +72,14 @@ static long ioctl_mpu(struct file *filp,unsigned int cmd,unsigned long arg)
 		case MPU_IOC_SET_TIMEOUT:
 			if(copy_from_user(&nTimeout,(uint32_t*)(arg),sizeof(nTimeout)))
 				{return -EFAULT;}
+			mutex_lock(&pI2cMpu_Handle->lock);
+			pI2cMpu_Handle->sample_interval_ms = nTimeout;
 			dev_info(&pI2cMpu_Handle->client->dev,"Timeout value changed: %d",nTimeout);
+			mutex_unlock(&pI2cMpu_Handle->lock);
 			break;
 		case MPU_IOC_RESET_BUF:
 			mutex_lock(&pI2cMpu_Handle->lock);
-			pI2cMpu_Handle->write_idx=pI2cMpu_Handle->Read_idx=0;
+			pI2cMpu_Handle->write_idx=0;
 			mutex_unlock(&pI2cMpu_Handle->lock);
 			break;
 		default:
@@ -69,9 +91,14 @@ static long ioctl_mpu(struct file *filp,unsigned int cmd,unsigned long arg)
 static unsigned int poll_mpu(struct file *filp, struct poll_table_struct *pt)
 {
 	struct Mpu_I2cDev *mpu=pI2cMpu_Handle;
+	struct Mpu_FileState *fstate = filp->private_data;
 	__poll_t mask = 0;
+	if (!mpu || !fstate)
+		return POLLERR;
+	/* Register first, then check - checking before registering risks
+	 * missing a wakeup that happens in between the two. */
 	poll_wait(filp, &BufferFull_Queue, pt);
-	if(mpu->write_idx != mpu->Read_idx)
+	if(mpu->write_idx != fstate->read_idx)
 	{
 		mask|=EPOLLIN|EPOLLRDNORM; //data ready
 	}
@@ -81,26 +108,27 @@ static ssize_t read_mpu(struct file *filp, char __user *buff, size_t count, loff
 {
   struct Mpu_I2cDev *mpu=pI2cMpu_Handle;
   struct mpu6050_sample read_sample;
+  struct Mpu_FileState *fstate = filp->private_data;
   size_t to_copybytes;
 
   pr_info("Waiting for Data\n");
   
-  if(!mpu||!mpu->client)
+  if(!mpu||!mpu->client||!fstate)
   	{return -ENODEV;}
-  if (wait_event_interruptible(BufferFull_Queue, mpu->write_idx != mpu->Read_idx))
+  if (wait_event_interruptible(BufferFull_Queue, mpu->write_idx != fstate->read_idx))
        return -ERESTARTSYS;
    mutex_lock(&mpu->lock);
   pr_info("Wait Finished,Now Reading!\n");
-  read_sample=mpu->DataArr[mpu->Read_idx];
-  mpu->Read_idx = (mpu->Read_idx + 1) % DATA_ARR_SIZE;
-  mpu->msg_len=scnprintf(mpu->msg,sizeof(mpu->msg),
+  read_sample=mpu->DataArr[fstate->read_idx];
+  fstate->read_idx = (fstate->read_idx + 1) % DATA_ARR_SIZE;
+  fstate->msg_len=scnprintf(fstate->msg,sizeof(fstate->msg),
   "ax=%d ay=%d az=%d temp_raw=%d gx=%d gy=%d gz=%d\n",
   read_sample.accel_x,read_sample.accel_y,read_sample.accel_z,
   read_sample.temp_raw,read_sample.gyro_x,read_sample.gyro_y,read_sample.gyro_z);
   
-  to_copybytes=min(count,mpu->msg_len);
+  to_copybytes=min(count,fstate->msg_len);
   
-  if(copy_to_user(buff,mpu->msg,to_copybytes))
+  if(copy_to_user(buff,fstate->msg,to_copybytes))
   {
   	mutex_unlock(&mpu->lock);
 	return -EFAULT;
@@ -164,7 +192,7 @@ static int mpu_probe(struct i2c_client *client)
 	pMpu_Dev->client=client;
 	mutex_init(&pMpu_Dev->lock);
 	pMpu_Dev->write_idx=0;
-	pMpu_Dev->Read_idx=0;
+	pMpu_Dev->sample_interval_ms = TIMEOUT;
 	i2c_set_clientdata(client,pMpu_Dev);
 	pI2cMpu_Handle=pMpu_Dev;
 
@@ -184,7 +212,7 @@ static int mpu_probe(struct i2c_client *client)
 	INIT_WORK(&pMpu_Dev->work,Work_Callback);
 	 /* setup your timer to call my_timer_callback */
     timer_setup(&pMpu_Dev->timer, Timer_Callback, 0);
-	mod_timer(&pMpu_Dev->timer,jiffies +msecs_to_jiffies((nTimeout!=0)?nTimeout:TIMEOUT));
+	mod_timer(&pMpu_Dev->timer,jiffies +msecs_to_jiffies(pMpu_Dev->sample_interval_ms));
 	dev_info(&client->dev, "mpu6050 driver probe complete\n");
 	return ret;	
 }

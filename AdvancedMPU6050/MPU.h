@@ -40,8 +40,6 @@ static void Decode_MPU(struct mpu6050_sample *sample, uint8_t *data);
 //Device
 struct Mpu_I2cDev
 {
-	char msg[256];
-	size_t msg_len;
 	struct mutex lock;
 	dev_t dev_num;
 	struct cdev cdev_mpu;
@@ -54,9 +52,19 @@ struct Mpu_I2cDev
 	struct  mpu6050_sample  DataArr[DATA_ARR_SIZE];
 
 	u8 write_idx;// next slot the workqueue will fill
-	u8 Read_idx; //read pos
+	u32 sample_interval_ms;       /* live-configurable via ioctl */
 };
-struct Mpu_I2cDev *pI2cMpu_Handle;
+/*
+ * Per-open-file state - each fd that opens the device gets its own
+ * read cursor into the shared DataArr, instead of all readers fighting
+ * over one shared index.
+ */
+struct Mpu_FileState
+{
+	u8 read_idx;
+	char msg[256];
+	size_t msg_len;
+};
 //Vars
 unsigned int nTimeout=0;
 //Functions
