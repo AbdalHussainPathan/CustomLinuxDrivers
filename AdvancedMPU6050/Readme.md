@@ -15,11 +15,16 @@ verified on hardware before adding the next.
   decoded sample into a ring buffer.
 - **Char device** (`/dev/MPU_6050`) - `read()` blocks until a new sample
   arrives; `.poll` shares the same wait queue for `poll()`/`select()`.
-- **ioctl** - in progress (runtime sample-rate change, buffer reset).
+- **Per-reader state** - each `open()` gets its own read cursor
+  (`file->private_data`), so multiple processes can read the stream
+  concurrently without racing over a single shared index. A new reader
+  starts at the current write position, not 0, so it waits for fresh
+  data instead of replaying old samples.
+- **ioctl** - `MPU_IOC_SET_TIMEOUT` changes the sample interval live;
+  `MPU_IOC_RESET_BUF` resets the buffer write position.
 
-**Not yet done:** device tree overlay (client is manual for now),
-per-fd read position (single shared index currently), mmap, and a
-second minor device for motion-event detection.
+**Not yet done:** device tree overlay (client is manual for now), mmap,
+and a second minor device for motion-event detection.
 
 ## Real bugs hit while building this
 
@@ -46,6 +51,19 @@ second minor device for motion-event detection.
 7. **Wrong wait condition** - used `write_idx >= DATA_ARR_SIZE`
    ("buffer full"), which is wrong for a continuous stream. Replaced
    with `write_idx != read_idx` (standard producer/consumer check).
+8. **ioctl silently failing** - userspace passed the timeout as a raw
+   integer value instead of a pointer to it, so `copy_from_user()` in
+   the kernel tried to read from an invalid address (e.g. address
+   `0x32` for a value of 50) and failed with `-EFAULT`. The test app
+   didn't check `ioctl()`'s return value, so this failed silently.
+   Fixed by passing `&TimeoutValue`.
+9. **New rate immediately overwritten** - after fixing #8, the sample
+   rate still wouldn't change. `Work_Callback` had its own leftover
+   `mod_timer()` call still using the old hardcoded `TIMEOUT` macro,
+   re-arming the timer with the stale value right after
+   `Timer_Callback` had just armed it correctly. Fixed by removing the
+   redundant `mod_timer()` call from `Work_Callback` - only the timer
+   callback itself should re-arm the timer.
 
 ## Hardware
 
@@ -62,5 +80,5 @@ cat /dev/MPU_6050
 
 ## Status
 
-Core driver (I2C bring-up, char device, blocking read, poll/select)
-working and tested on hardware. ioctl in progress.
+Core driver (I2C bring-up, char device, blocking read, poll/select,
+per-reader state, ioctl) working and tested on hardware.
