@@ -36,7 +36,7 @@ int main(int num_args, char *args[])
         return 1;
     }
     struct pollfd pfd = { .fd = fd, .events = POLLIN};
-    ioctl(fd,MPU_IOC_SET_TIMEOUT,TimeoutValue);
+    ioctl(fd,MPU_IOC_SET_TIMEOUT,&TimeoutValue);
     while(1)
     {
         ret = poll(&pfd, 1, 500);  /* wait up to 5s */
