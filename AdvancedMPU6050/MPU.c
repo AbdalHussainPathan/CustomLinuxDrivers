@@ -28,7 +28,6 @@ void Work_Callback(struct work_struct *work)
 	
 	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(TIMEOUT));
 	mutex_unlock(&mpu->lock);
-
 }
 static int mpu_read_reg(struct i2c_client *client,u8 reg)
 {
@@ -91,6 +90,17 @@ static ssize_t write_mpu(struct file *filp, const char __user *buff, size_t coun
   pr_info("write is called\n");
   return count;
 }
+static unsigned int poll_mpu(struct file *filp, struct poll_table_struct *pt)
+{
+	struct Mpu_I2cDev *mpu=pI2cMpu_Handle;
+	__poll_t mask = 0;
+	poll_wait(filp, &BufferFull_Queue, pt);
+	if(mpu->write_idx != mpu->Read_idx)
+	{
+		mask|=EPOLLIN|EPOLLRDNORM; //data ready
+	}
+	return mask;
+}
 static ssize_t read_mpu(struct file *filp, char __user *buff, size_t count, loff_t *f_pos)
 {
   struct Mpu_I2cDev *mpu=pI2cMpu_Handle;
@@ -102,7 +112,7 @@ static ssize_t read_mpu(struct file *filp, char __user *buff, size_t count, loff
   if(!mpu||!mpu->client)
   	{return -ENODEV;}
   if (wait_event_interruptible(BufferFull_Queue, mpu->write_idx != mpu->Read_idx))
-        return -ERESTARTSYS;
+       return -ERESTARTSYS;
    mutex_lock(&mpu->lock);
   pr_info("Wait Finished,Now Reading!\n");
   read_sample=mpu->DataArr[mpu->Read_idx];

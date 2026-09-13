@@ -9,6 +9,7 @@
 #include <linux/timer.h>
 #include <linux/jiffies.h>
 #include <linux/workqueue.h>
+#include<linux/poll.h>
 #include <linux/version.h>
 #define DRIVER_NAME			       "mpu6050"
 #define MPU6050_REG_PWR_MGMT_1      0x6B
@@ -66,6 +67,7 @@ static int open_mpu(struct inode *inode,struct file *filp);
 static int close_mpu(struct inode *inode,struct file *filp);
 static ssize_t write_mpu(struct file *filp,const char __user *buff,size_t count,loff_t *fpos);
 static ssize_t read_mpu(struct file *filp, char __user *buff,size_t count,loff_t *fpos);
+static unsigned int poll_mpu(struct file *filp, struct poll_table_struct *pt);
 
 static void Timer_Callback(struct timer_list *t);
 static void Work_Callback(struct work_struct *work);
@@ -76,6 +78,7 @@ struct file_operations fops=
     .write=write_mpu,
     .release=close_mpu,
     .open=open_mpu,
+	.poll=poll_mpu,
     .owner=THIS_MODULE
 };
 
