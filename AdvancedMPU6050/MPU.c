@@ -5,7 +5,7 @@ void Timer_Callback(struct timer_list *data)
 	 /* from_timer gives us back the containing struct */
 	struct Mpu_I2cDev *mpu=timer_container_of(mpu,data,timer);
 	schedule_work(&mpu->work);
-	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(TIMEOUT));
+	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies((nTimeout!=0)?nTimeout:TIMEOUT));
 }
 void Work_Callback(struct work_struct *work)
 {
@@ -29,51 +29,7 @@ void Work_Callback(struct work_struct *work)
 	mod_timer(&mpu->timer, jiffies + msecs_to_jiffies(TIMEOUT));
 	mutex_unlock(&mpu->lock);
 }
-static int mpu_read_reg(struct i2c_client *client,u8 reg)
-{
-	return i2c_smbus_read_byte_data(client,reg);
-}
-static int mpu_write_reg(struct i2c_client *client, u8 reg, u8 val)
-{
-	return i2c_smbus_write_byte_data(client, reg, val);
-}
-static int mpu_wakeup(struct i2c_client *client)
-{
-	/* PWR_MGMT_1: writing 0x00 clears the SLEEP bit and selects
-	 * the default clock source - takes the chip out of sleep mode. */
-	int ret=mpu_write_reg(client, MPU6050_REG_PWR_MGMT_1, 0x00);
-	if(ret<0)
-		return ret;
-	/* PWR_MGMT_2: bring all accel/gyro axes out of standby.
-	 * Chip was defaulting to 0x3F (all axes standby) on this board. */
-	ret = mpu_write_reg(client, MPU6050_REG_PWR_MGMT_2, 0x00);
-	if (ret < 0)
-		return ret;
-	msleep(50);
-	return 0;
-}
-/* Burst-read all 14 data registers in one I2C transaction */
-static int mpu_readburst(struct i2c_client *client, u8 *buf)
-{
-	int ret;
 
-	ret = i2c_smbus_read_i2c_block_data(client, MPU6050_REG_ACCEL_XOUT_H,MPU6050_BURST_LEN, buf);
-	if (ret < 0)
-		return ret;
-	if (ret != MPU6050_BURST_LEN)
-		return -EIO;
-	return 0;
-}
-static void Decode_MPU(struct mpu6050_sample *sample, uint8_t *data)
-{
-	sample->accel_x=(s16)((data[0]<<8)|data[1]);
-	sample->accel_y=(s16)((data[2]<<8)|data[3]);
-	sample->accel_z=(s16)((data[4]<<8)|data[5]);
-	sample->temp_raw=(s16)((data[6]<<8)|data[7]);
-	sample->gyro_x=(s16)((data[8]<<8)|data[9]);
-	sample->gyro_y=(s16)((data[10]<<8)|data[11]);
-	sample->gyro_z=(s16)((data[12]<<8)|data[13]);
-}
 static int close_mpu (struct inode *inode, struct file *filp)
 {
    pr_info("close was success\n");
@@ -89,6 +45,26 @@ static ssize_t write_mpu(struct file *filp, const char __user *buff, size_t coun
 {
   pr_info("write is called\n");
   return count;
+}
+static long ioctl_mpu(struct file *filp,unsigned int cmd,unsigned long arg)
+{
+	switch (cmd)
+	{
+		case MPU_IOC_SET_TIMEOUT:
+			if(copy_from_user(&nTimeout,(uint32_t*)(arg),sizeof(nTimeout)))
+				{return -EFAULT;}
+			dev_info(&pI2cMpu_Handle->client->dev,"Timeout value changed: %d",nTimeout);
+			break;
+		case MPU_IOC_RESET_BUF:
+			mutex_lock(&pI2cMpu_Handle->lock);
+			pI2cMpu_Handle->write_idx=pI2cMpu_Handle->Read_idx=0;
+			mutex_unlock(&pI2cMpu_Handle->lock);
+			break;
+		default:
+			dev_err(&pI2cMpu_Handle->client->dev,"Invalid ioctl cmd!");
+			return -EINVAL;
+	}
+	return 0;
 }
 static unsigned int poll_mpu(struct file *filp, struct poll_table_struct *pt)
 {
@@ -208,7 +184,7 @@ static int mpu_probe(struct i2c_client *client)
 	INIT_WORK(&pMpu_Dev->work,Work_Callback);
 	 /* setup your timer to call my_timer_callback */
     timer_setup(&pMpu_Dev->timer, Timer_Callback, 0);
-	mod_timer(&pMpu_Dev->timer,jiffies +msecs_to_jiffies(TIMEOUT));
+	mod_timer(&pMpu_Dev->timer,jiffies +msecs_to_jiffies((nTimeout!=0)?nTimeout:TIMEOUT));
 	dev_info(&client->dev, "mpu6050 driver probe complete\n");
 	return ret;	
 }
