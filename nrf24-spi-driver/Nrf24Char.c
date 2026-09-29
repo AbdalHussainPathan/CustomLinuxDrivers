@@ -86,12 +86,37 @@ int	nrf_probe(struct spi_device *spi)
 {
     //nrf_init();
     pr_info("NRF Spi Detected\n");
-    nrf_write_reg(CONFIG,0x08);
-    char buff[256];
-    if(nrf_read_reg(CONFIG,buff)<0)
+    /* configure SPI link */
+    spi->bits_per_word = 8;
+    spi->mode = SPI_MODE_0;       /* nRF24L01 uses mode 0 */
+    spi->max_speed_hz = 1000000;  /* start at 1 MHz */
+    int ret = spi_setup(spi);
+    if (ret)
+        return ret;
+    nrf_dev=devm_kzalloc(&spi->dev,sizeof(*nrf_dev),GFP_KERNEL);
+    if(!nrf_dev)
+        return -ENOMEM;
+    nrf_dev->spi_dev=spi;
+    spi_set_drvdata(spi, nrf_dev);
+    if(nrf_write_reg(CONFIG,0x08)<0)
     {
-        pr_info("Cannot Read CONFIG Reg\n");
+        pr_info("Cannot write CONFIG Reg\n");
+        return -1;
     }
+    u8 val;
+    if(nrf_read_reg(CONFIG,&val)<0)
+    {
+        pr_info("Cannot Read CONFIG Reg \n");
+         pr_info("CONFIG reg = 0x%02x\n", val);
+    }
+    nrf_init();
+    ret=init_NrfDev();
+    if(ret<0)
+    {
+        dev_err(&spi->dev, "failed to init char device (%d)\n", ret);
+        return ret;
+    }
+    dev_info(&spi->dev, "NRF2401 driver probe complete\n");
     return 0;
 }
 void nrf_remove(struct spi_device *spi)
@@ -105,7 +130,7 @@ void nrf_shutdown(struct spi_device *spi)
 }
 static const struct spi_device_id nrf_spi_id[] =
 {
-    {"nrf_spi",0},
+    {"dh2228fv",0},
     {}
 };
 MODULE_DEVICE_TABLE(spi,nrf_spi_id);

@@ -1,0 +1,64 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/board/am335x-bbw-bbb-base.h>
+#include <dt-bindings/pinctrl/am33xx.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	compatible = "ti,beaglebone", "ti,beaglebone-black", "ti,beaglebone-green";
+
+	/* Board Name */
+	part-number = "BB-NRF24-SPI1";
+	version = "00A0";
+
+	exclusive-use =
+		"P9.31",	/* spi1_sclk */
+		"P9.29",	/* spi1_d0 (MISO) */
+		"P9.30",	/* spi1_d1 (MOSI) */
+		"P9.28",	/* spi1_cs0 (CSN) */
+		"P9.23",	/* CE  gpio1_17 */
+		"P9.27",	/* IRQ gpio3_19 */
+		"spi1";
+};
+
+&am33xx_pinmux {
+	bb_spi1_pins: pinmux_bb_spi1_pins {
+		pinctrl-single,pins = 
+			AM33XX_PADCONF(AM335X_PIN_MCASP0_ACLKX,  PIN_INPUT, MUX_MODE3)	/* P9_31 spi1_sclk */
+			AM33XX_PADCONF(AM335X_PIN_MCASP0_FSX,    PIN_INPUT, MUX_MODE3)	/* P9_29 spi1_d0 */
+			AM33XX_PADCONF(AM335X_PIN_MCASP0_AXR0,   PIN_INPUT, MUX_MODE3)	/* P9_30 spi1_d1 */
+			AM33XX_PADCONF(AM335X_PIN_MCASP0_AHCLKR, PIN_INPUT, MUX_MODE3)	/* P9_28 spi1_cs0 */
+		>;
+	};
+
+	nrf24_gpio_pins: pinmux_nrf24_gpio_pins {
+		pinctrl-single,pins = 
+			AM33XX_PADCONF(AM335X_PIN_GPMC_A1,   PIN_OUTPUT,        MUX_MODE7)	/* P9_23 CE  gpio1_17 */
+			AM33XX_PADCONF(AM335X_PIN_MCASP0_FSR, PIN_INPUT_PULLUP, MUX_MODE7)	/* P9_27 IRQ gpio3_19 */
+		>;
+	};
+};
+
+&spi1 {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&bb_spi1_pins>;
+
+	nrf24@0 {
+		compatible = "nordic,nrf24l01";
+		reg = <0>;
+		spi-max-frequency = <1000000>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&nrf24_gpio_pins>;
+
+		ce-gpios = <&gpio1 17 GPIO_ACTIVE_HIGH>;
+		interrupt-parent = <&gpio3>;
+		interrupts = <19 IRQ_TYPE_EDGE_FALLING>;
+	};
+};
